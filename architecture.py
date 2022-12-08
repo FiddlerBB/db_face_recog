@@ -514,7 +514,6 @@ def InceptionResNetV2():
 
 	# Create model
 	model = Model(inputs, x, name='inception_resnet_v1')
-
 	return model
 
 # Create the FaceNet model
