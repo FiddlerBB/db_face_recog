@@ -1,4 +1,4 @@
-from modules import get_face_rec, get_encode, analyze_face, update_face, get_image_b64, get_face_rec, image_bgr
+from modules import get_encode, analyze_face, insert_user, get_image_b64, image_bgr, get_face
 from scipy.spatial.distance import cosine
 import cv2
 import json
@@ -6,19 +6,19 @@ import json
 
 def update_user(image, directory_id):
     db_encoder, img = analyze_face(image)
-    update_face(img, db_encoder, directoryId=directory_id)
+    insert_user(img, db_encoder, directoryId=directory_id)
     return img
 
 
-def face_recognize(encoding_dict, image, recognition_init=0.6):
+def face_recognize(encoding_dict, image, recognition_init=0.6) -> dict:
     base64_result = []
     id_result = []
 
-    face, pt1, pt2 = get_face_rec(image)
+    face, pt1, pt2 = get_face(image)
 
     encode = get_encode(image=face)
     # id = 'unknown'
-    distance = float('inf')
+    # distance = float('inf')
 
     for db_id, db_encode in encoding_dict.items():
         # print(db_id)
@@ -40,6 +40,6 @@ def face_recognize(encoding_dict, image, recognition_init=0.6):
     #                 (0, 200, 200), 2)
     # cv2.imshow('a', img_origin)
     # cv2.waitKey(0)
-            
+
     result_dict = dict(zip(id_result, base64_result))
     return result_dict

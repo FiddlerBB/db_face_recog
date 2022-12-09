@@ -4,8 +4,10 @@ import base64
 import sqlite3
 import pandas as pd
 import numpy as np
+import io
 from sklearn.preprocessing import Normalizer
 from architecture import InceptionResNetV2
+from typing import Tuple
 
 SHAPE = (160, 160)
 MODEL_PATH = 'facenet_keras_weights.h5'
@@ -24,7 +26,7 @@ CREATE table if not exists faceid_table (
           )
 
 
-def normalize(img):
+def normalize(img: bytes) -> bytes:
     mean, std = img.mean(), img.std()
     return (img - mean) / std
 
@@ -34,57 +36,45 @@ def get_detector():
     return face_detector
 
 
-def image_bgr(image):
-    img_BGR = cv2.imdecode(image, cv2.IMREAD_COLOR)
-    return img_BGR
+def image_bgr(image) -> np.array:
+    img_bgr = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    return img_bgr
 
 
-def image_bgr2rgb(img_origin):
-    img_rgb = cv2.cvtColor(img_origin, cv2.COLOR_BGR2RGB)
+def image_bgr2rgb(image) -> np.array:
+    img_bgr = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     return img_rgb
 
 
-def b64_rgb(id: int) -> np.array:
-    image = get_image_b64(id)
-    image_array = from_base64(image)
-    return image_array
-
-
 # convert cv2 to base64
-def to_base64(img):
+def to_base64(img: np.array) -> base64:
     _, buf = cv2.imencode(".png", img)
     return base64.b64encode(buf)
 
 
 # convert base64 cv2
-def from_base64(buf):
+def from_base64(buf: base64) -> np.array:
     buf_decode = base64.b64decode(buf)
     buf_arr = np.frombuffer(buf_decode, dtype=np.uint8)
     return cv2.imdecode(buf_arr, cv2.IMREAD_UNCHANGED)
 
 
 # convert byte to np.array
-def byte2array(byte, dtype=np.float32):
+def byte2array(byte, dtype=np.float32) -> np.array:
     array_return = np.frombuffer(byte, dtype=np.float32)
     return array_return
 
 
 # process image
-def get_location(image):
-    # img_BGR = cv2.imread(image)
-    img_origin = image_bgr(image)
-    img_RGB = image_bgr2rgb(img_origin)
+def get_face(image) -> Tuple[np.array, int, int]:
+    img_RGB = image_bgr2rgb(image)
     # b64_img = to_base64(img_origin)
     face_detector = get_detector()
     x = face_detector.detect_faces(img_RGB)
     x1, y1, width, height = x[0]['box']
     x1, y1 = abs(x1), abs(y1)
     x2, y2 = x1 + width, y1 + height
-    return x1, y1, x2, y2, img_RGB
-
-
-def get_face_rec(path):
-    x1, y1, x2, y2, img_RGB = get_location(path)
     face = img_RGB[y1:y2, x1:x2]
     pt1 = (x1, y1)
     pt2 = (x2, y2)
@@ -104,7 +94,7 @@ def get_encode(image, model_path=MODEL_PATH, required_shape=SHAPE):
 def analyze_face(img):
     encodes = []
     # img_origin = image_bgr(img)
-    face, pt1, pt2 = get_face_rec(img)
+    face, pt1, pt2 = get_face(img)
     img_b64 = to_base64(face)
     encoder = get_encode(model_path=MODEL_PATH, image=face)
     encodes.append(encoder)
@@ -116,57 +106,43 @@ def analyze_face(img):
     return encode_input, img_b64
 
 
-# convert cv2 to base64
-def to_base64(img):
-    _, buf = cv2.imencode(".png", img)
-    return base64.b64encode(buf)
-
-
-# convert base64 cv2
-def from_base64(buf):
-    buf_decode = base64.b64decode(buf)
-    buf_arr = np.frombuffer(buf_decode, dtype=np.uint8)
-    return cv2.imdecode(buf_arr, cv2.IMREAD_UNCHANGED)
-
-
-# convert byte to np.array
-def byte2array(byte, dtype=np.float32):
-    array_return = np.frombuffer(byte, dtype=np.float32)
-    return array_return
-
-
 # query data
-def select_by_id(id):
+def select_by_id(id: int) -> dict:
     df = pd.read_sql(f"select * from faceid_table where id = {id}", conn)
     stored_predict = df['predict_result'][0]
     stored_predict = byte2array(stored_predict)
     return stored_predict
 
 
-def update_face(b64_img, encoded_input: bytes, directoryId: int) -> None:
+# insert new user
+def insert_user(b64_img, encoded_input: bytes, directoryId: int) -> None:
     c.execute("INSERT INTO faceid_table (image_base64, predict_result, directoryId) VALUES (?,?,?)",
               (b64_img, encoded_input, directoryId))
     conn.commit()
 
 
-def load_predict_db(directoryId) -> dict:
+# scan db and get users by directoryId
+def load_predict_db(directoryId: int) -> dict:
     df = pd.read_sql(
         f"select id, predict_result from faceid_table where directoryId={directoryId}", conn)
-    all_stored_predict = df['predict_result']
-    all_stored_predict = [byte2array(i) for i in all_stored_predict]
-    id = df['id'].apply(str).tolist()
-    dict_result = dict(zip(id, all_stored_predict))
+    stored_predict = df['predict_result'].apply(byte2array)
+    id = df['id'].apply(str)
+    dict_result = dict(zip(id, stored_predict))
     return dict_result
 
-
+# select base64 format based on specific id
 def get_image_b64(id: int) -> base64:
-    if id != 'unknown':
-        df = pd.read_sql(
-            f"select image_base64 from faceid_table where id = {id}", conn)
-        image_b64 = df['image_base64'][0]
-        return image_b64
-    return "404 ERROR"
+    df = pd.read_sql(
+        f"select image_base64 from faceid_table where id = {id}", conn)
+    image_b64 = df['image_base64'][0]
+    return image_b64
 
+
+# process file input
+def process_input(file) -> cv2:
+    image = io.BytesIO(file)
+    input_image = np.asarray(bytearray(image.read()), dtype=np.uint8)
+    return input_image
 
 if __name__ == '__main__':
     pass

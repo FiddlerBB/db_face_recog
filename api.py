@@ -1,16 +1,6 @@
-from modules import  load_predict_db
+from modules import load_predict_db, process_input
 from fastapi import File, FastAPI
 from face_id_api import update_user, face_recognize
-import cv2
-import io
-import numpy as np
-
-
-def process_input(file) -> cv2:
-    image = io.BytesIO(file)
-    input_image = np.asarray(bytearray(image.read()), dtype=np.uint8)
-    return input_image
-
 
 app = FastAPI(title='Testing FastAPI')
 
@@ -24,8 +14,8 @@ async def get_body(User_image: bytes = File(...), Directory_id: int = File(...))
             'check_update': '200 OK'
         }
     return {
-            'check_update': '404 ERROR'
-        }
+        'check_update': '404 ERROR'
+    }
 
 
 @app.post("/face-id/face-recognition/", tags=['Recognize User Face by User ID'])
@@ -34,7 +24,7 @@ async def get_body(New_image: bytes = File(...), Directory_id: int = File(...)):
     result = face_recognize(image=input_image, encoding_dict=load_predict_db(
         directoryId=Directory_id), recognition_init=0.6)
     return {
-        'count_users' : len(result),
+        'count_users': len(result),
         'directory_id': Directory_id,
         'user_id': result
     }
